@@ -182,6 +182,25 @@
             margin-bottom: 20px;
             overflow-x: auto;
             overflow-y: hidden;
+            max-height: 150px;
+        }
+
+        .gantt-chart::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .gantt-chart::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .gantt-chart::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+
+        .gantt-chart::-webkit-scrollbar-thumb:hover {
+            background: #555;
         }
 
         .gantt-chart h3 {
@@ -200,6 +219,7 @@
             align-items: flex-start;
             margin-bottom: 10px;
             position: relative;
+            min-height: 60px;
         }
 
         .time-slot {
@@ -207,14 +227,12 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-width: 60px;
             height: 50px;
-            margin: 1px;
             text-align: center;
             border-radius: 5px;
             color: white;
             font-weight: bold;
-            position: relative;
+            position: absolute;
             font-size: 14px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             border: 1px solid rgba(255,255,255,0.3);
@@ -231,20 +249,27 @@
             margin-top: 2px;
         }
 
+        .idle-slot {
+            background: #bdc3c7 !important;
+            color: #2c3e50 !important;
+            border: 1px dashed #7f8c8d !important;
+        }
+
         .time-labels {
             display: flex;
             margin-top: 10px;
             border-top: 2px solid #ecf0f1;
             padding-top: 10px;
+            position: relative;
         }
 
         .time-label {
-            min-width: 62px;
+            width: 60px;
             text-align: center;
             font-weight: bold;
             color: #2c3e50;
             font-size: 14px;
-            position: relative;
+            position: absolute;
         }
 
         .time-label::before {
@@ -536,6 +561,7 @@
             let readyQueue = [];
             let completed = [];
             let processCopy = processes.map(p => ({...p, remainingTime: p.burstTime}));
+            const firstArrival = Math.min(...processes.map(p => p.arrivalTime));
 
             while (completed.length < processes.length) {
                 // Add newly arrived processes to ready queue
@@ -546,7 +572,21 @@
                 });
 
                 if (readyQueue.length === 0) {
-                    time++;
+                    // Add idle time step if needed
+                    if (time < Math.min(...processCopy.filter(p => !completed.includes(p)).map(p => p.arrivalTime))) {
+                        const nextArrival = Math.min(...processCopy.filter(p => !completed.includes(p)).map(p => p.arrivalTime));
+                        simulationSteps.push({
+                            time: time,
+                            endTime: nextArrival,
+                            process: 'IDLE',
+                            readyQueue: [],
+                            action: `CPU Idle from ${time} to ${nextArrival}`,
+                            isIdle: true
+                        });
+                        time = nextArrival;
+                    } else {
+                        time++;
+                    }
                     continue;
                 }
 
@@ -560,7 +600,8 @@
                     process: currentProcess.id,
                     readyQueue: readyQueue.map(p => ({id: p.id, color: p.color})),
                     action: `Executing ${currentProcess.id} for ${executeTime} time units`,
-                    remainingTime: currentProcess.remainingTime - executeTime
+                    remainingTime: currentProcess.remainingTime - executeTime,
+                    isIdle: false
                 });
 
                 time += executeTime;
@@ -588,6 +629,15 @@
 
             processCopy.forEach(process => {
                 if (time < process.arrivalTime) {
+                    // Add idle time if needed
+                    simulationSteps.push({
+                        time: time,
+                        endTime: process.arrivalTime,
+                        process: 'IDLE',
+                        readyQueue: [],
+                        action: `CPU Idle from ${time} to ${process.arrivalTime}`,
+                        isIdle: true
+                    });
                     time = process.arrivalTime;
                 }
 
@@ -600,7 +650,8 @@
                     endTime: time + process.burstTime,
                     process: process.id,
                     readyQueue: readyQueue.map(p => ({id: p.id, color: p.color})),
-                    action: `Executing ${process.id} for ${process.burstTime} time units`
+                    action: `Executing ${process.id} for ${process.burstTime} time units`,
+                    isIdle: false
                 });
 
                 time += process.burstTime;
@@ -619,7 +670,16 @@
                 );
 
                 if (available.length === 0) {
-                    time++;
+                    const nextArrival = Math.min(...processCopy.filter(p => !completed.includes(p)).map(p => p.arrivalTime));
+                    simulationSteps.push({
+                        time: time,
+                        endTime: nextArrival,
+                        process: 'IDLE',
+                        readyQueue: [],
+                        action: `CPU Idle from ${time} to ${nextArrival}`,
+                        isIdle: true
+                    });
+                    time = nextArrival;
                     continue;
                 }
 
@@ -634,7 +694,8 @@
                     endTime: time + currentProcess.burstTime,
                     process: currentProcess.id,
                     readyQueue: readyQueue.map(p => ({id: p.id, color: p.color})),
-                    action: `Executing ${currentProcess.id} for ${currentProcess.burstTime} time units`
+                    action: `Executing ${currentProcess.id} for ${currentProcess.burstTime} time units`,
+                    isIdle: false
                 });
 
                 time += currentProcess.burstTime;
@@ -671,18 +732,33 @@
             ganttChart.innerHTML = '';
             timeLabels.innerHTML = '';
 
+            let maxTime = 0;
+            if (simulationSteps.length > 0) {
+                maxTime = simulationSteps[upToStep].endTime;
+            }
+
+            // Set the width of the gantt timeline to accommodate all time units
+            ganttChart.style.width = `${maxTime * 60 + 60}px`;
+
             for (let i = 0; i <= upToStep && i < simulationSteps.length; i++) {
                 const step = simulationSteps[i];
-                const process = processes.find(p => p.id === step.process);
                 
                 const slot = document.createElement('div');
                 slot.className = 'time-slot';
-                slot.style.backgroundColor = process.color;
+                
+                if (step.isIdle) {
+                    slot.classList.add('idle-slot');
+                } else {
+                    const process = processes.find(p => p.id === step.process);
+                    slot.style.backgroundColor = process.color;
+                }
+                
                 slot.style.width = `${(step.endTime - step.time) * 60}px`;
+                slot.style.left = `${step.time * 60}px`;
                 
                 const processId = document.createElement('div');
                 processId.className = 'process-id';
-                processId.textContent = step.process;
+                processId.textContent = step.isIdle ? 'IDLE' : step.process;
                 
                 const timeRange = document.createElement('div');
                 timeRange.className = 'time-range';
@@ -690,21 +766,17 @@
                 
                 slot.appendChild(processId);
                 slot.appendChild(timeRange);
-                slot.title = `${step.process}: Time ${step.time} to ${step.endTime} (Duration: ${step.endTime - step.time})`;
+                slot.title = `${step.isIdle ? 'IDLE' : step.process}: Time ${step.time} to ${step.endTime} (Duration: ${step.endTime - step.time})`;
                 
                 ganttChart.appendChild(slot);
             }
 
             // Add time labels
-            let maxTime = 0;
-            if (simulationSteps.length > 0) {
-                maxTime = simulationSteps[upToStep].endTime;
-            }
-
+            timeLabels.style.width = `${maxTime * 60 + 60}px`;
             for (let t = 0; t <= maxTime; t++) {
                 const label = document.createElement('div');
                 label.className = 'time-label';
-                label.style.width = '60px';
+                label.style.left = `${t * 60}px`;
                 label.textContent = t;
                 timeLabels.appendChild(label);
             }
