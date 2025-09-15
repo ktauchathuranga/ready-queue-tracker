@@ -368,15 +368,21 @@
                     <label>Burst Time:</label>
                     <input type="number" id="burstTime" placeholder="e.g., 10" min="1">
                 </div>
+
+                <div class="process-input">
+                    <label>Priority (lower number is higher priority):</label>
+                    <input type="number" id="priority" placeholder="Default: 1" min="1">
+                </div>
                 
                 <button class="btn btn-primary" onclick="addProcess()">Add Process</button>
                 
                 <div class="process-input">
                     <label>Scheduling Algorithm:</label>
                     <select class="algorithm-select" id="algorithm">
-                        <option value="rr">Round Robin</option>
                         <option value="fcfs">First Come First Served</option>
-                        <option value="sjf">Shortest Job First</option>
+                        <option value="sjf">Shortest Job First (Non-Preemptive)</option>
+                        <option value="priority">Priority (Non-Preemptive)</option>
+                        <option value="rr">Round Robin</option>
                     </select>
                 </div>
                 
@@ -438,8 +444,10 @@
             const id = document.getElementById('processId').value.trim();
             const arrival = parseInt(document.getElementById('arrivalTime').value);
             const burst = parseInt(document.getElementById('burstTime').value);
+            const priorityValue = document.getElementById('priority').value;
+            const priority = priorityValue === '' ? 1 : parseInt(priorityValue);
 
-            if (!id || isNaN(arrival) || isNaN(burst) || arrival < 0 || burst < 1) {
+            if (!id || isNaN(arrival) || isNaN(burst) || isNaN(priority) || arrival < 0 || burst < 1 || priority < 1) {
                 alert('Please enter valid process details!');
                 return;
             }
@@ -453,6 +461,7 @@
                 id: id,
                 arrivalTime: arrival,
                 burstTime: burst,
+                priority: priority,
                 remainingTime: burst,
                 color: colors[processes.length % colors.length]
             });
@@ -465,13 +474,14 @@
             document.getElementById('processId').value = '';
             document.getElementById('arrivalTime').value = '';
             document.getElementById('burstTime').value = '';
+            document.getElementById('priority').value = '';
         }
 
         function updateProcessList() {
             const list = document.getElementById('processList');
             list.innerHTML = processes.map(p => 
                 `<div class="process-item">
-                    <span>${p.id} (AT: ${p.arrivalTime}, BT: ${p.burstTime})</span>
+                    <span>${p.id} (AT: ${p.arrivalTime}, BT: ${p.burstTime}, P: ${p.priority})</span>
                     <button class="btn btn-danger" onclick="removeProcess('${p.id}')">Remove</button>
                 </div>`
             ).join('');
@@ -516,6 +526,8 @@
                 simulateFirstComeFirstServed();
             } else if (algorithm === 'sjf') {
                 simulateShortestJobFirst();
+            } else if (algorithm === 'priority') {
+                simulatePriority();
             }
 
             showControls();
@@ -530,11 +542,10 @@
             let processQueue = [...processCopy];
 
             while (completedCount < processes.length) {
-                // Add newly arrived processes to ready queue
                 processQueue = processQueue.filter(p => {
                     if (p.arrivalTime <= time) {
                         readyQueue.push(p);
-                        return false; // Remove from processQueue
+                        return false; 
                     }
                     return true;
                 });
@@ -548,7 +559,7 @@
                             continue;
                         }
                     } else {
-                        break; // No more processes to run
+                        break;
                     }
                 }
 
@@ -565,7 +576,6 @@
                 time += executeTime;
                 currentProcess.remainingTime -= executeTime;
 
-                // Add processes that arrived during execution
                  processQueue = processQueue.filter(p => {
                     if (p.arrivalTime <= time) {
                         readyQueue.push(p);
@@ -604,11 +614,11 @@
                 });
 
                 time += process.burstTime;
-                process.burstTime = 0; // Mark as completed for ready queue filtering
+                process.burstTime = 0; 
             });
         }
         
-        function simulateShortestJobFirst() {
+        function simulateNonPreemptive(sortCriteria) {
             let time = 0;
             let completedCount = 0;
             let processCopy = JSON.parse(JSON.stringify(processes));
@@ -619,15 +629,17 @@
                 if (available.length === 0) {
                     let nextProcess = processCopy.find(p => p.remainingTime > 0);
                     if (nextProcess) {
-                        simulationSteps.push({ idle: true, time: time, endTime: nextProcess.arrivalTime });
-                        time = nextProcess.arrivalTime;
+                        if (time < nextProcess.arrivalTime) {
+                            simulationSteps.push({ idle: true, time: time, endTime: nextProcess.arrivalTime });
+                            time = nextProcess.arrivalTime;
+                        }
                         continue;
                     } else {
-                        break; // All done
+                        break; 
                     }
                 }
 
-                available.sort((a, b) => a.burstTime - b.burstTime);
+                available.sort(sortCriteria);
                 let currentProcess = available[0];
                 
                 let readyQueue = available.slice(1);
@@ -640,9 +652,17 @@
                 });
 
                 time += currentProcess.burstTime;
-                currentProcess.remainingTime = 0; // Mark as completed
+                currentProcess.remainingTime = 0;
                 completedCount++;
             }
+        }
+
+        function simulateShortestJobFirst() {
+            simulateNonPreemptive((a, b) => a.burstTime - b.burstTime);
+        }
+
+        function simulatePriority() {
+            simulateNonPreemptive((a, b) => a.priority - b.priority);
         }
 
         function showStep(step) {
@@ -729,7 +749,7 @@
 
             for (let i = 0; i <= upToStep; i++) {
                 const step = simulationSteps[i];
-                if (step.idle) continue; // Don't show queue for idle steps
+                if (step.idle) continue; 
                 
                 const queueState = document.createElement('div');
                 queueState.className = 'queue-state';
@@ -839,14 +859,11 @@
         });
 
         window.onload = function() {
-            processes = [
-                {id: 'P1', arrivalTime: 0, burstTime: 10, color: colors[0]},
-                {id: 'P2', arrivalTime: 1, burstTime: 8, color: colors[1]},
-                {id: 'P3', arrivalTime: 2, burstTime: 15, color: colors[2]},
-                {id: 'P4', arrivalTime: 5, burstTime: 12, color: colors[3]},
-                {id: 'P5', arrivalTime: 8, burstTime: 5, color: colors[4]}
-            ];
+            // Clear default sample data to avoid confusion with priority
+            processes = [];
             updateProcessList();
+            document.getElementById('quantumDiv').style.display = 'none'; // Hide RR quantum by default
+            document.getElementById('algorithm').value = 'fcfs';
         };
     </script>
 </body>
