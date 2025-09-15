@@ -379,10 +379,18 @@
                 <div class="process-input">
                     <label>Scheduling Algorithm:</label>
                     <select class="algorithm-select" id="algorithm">
-                        <option value="fcfs">First Come First Served</option>
-                        <option value="sjf">Shortest Job First (Non-Preemptive)</option>
-                        <option value="priority">Priority (Non-Preemptive)</option>
-                        <option value="rr">Round Robin</option>
+                        <optgroup label="Non-Preemptive">
+                            <option value="fcfs">First Come First Served</option>
+                            <option value="sjf">Shortest Job First</option>
+                            <option value="ljf">Longest Job First</option>
+                            <option value="priority_np">Priority</option>
+                        </optgroup>
+                        <optgroup label="Preemptive">
+                            <option value="srtf">Shortest Remaining Time First</option>
+                            <option value="lrtf">Longest Remaining Time First</option>
+                            <option value="priority_p">Priority</option>
+                            <option value="rr">Round Robin</option>
+                        </optgroup>
                     </select>
                 </div>
                 
@@ -436,7 +444,7 @@
         let simulationSteps = [];
         let currentStep = 0;
         let isAutoPlaying = false;
-        const TIME_UNIT_WIDTH = 60; // pixels per time unit
+        const TIME_UNIT_WIDTH = 60;
 
         const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e'];
 
@@ -457,15 +465,7 @@
                 return;
             }
 
-            processes.push({
-                id: id,
-                arrivalTime: arrival,
-                burstTime: burst,
-                priority: priority,
-                remainingTime: burst,
-                color: colors[processes.length % colors.length]
-            });
-
+            processes.push({ id, arrivalTime: arrival, burstTime: burst, priority, remainingTime: burst, color: colors[processes.length % colors.length] });
             updateProcessList();
             clearInputs();
         }
@@ -520,104 +520,38 @@
             simulationSteps = [];
             currentStep = 0;
 
-            if (algorithm === 'rr') {
-                simulateRoundRobin(quantum);
-            } else if (algorithm === 'fcfs') {
-                simulateFirstComeFirstServed();
-            } else if (algorithm === 'sjf') {
-                simulateShortestJobFirst();
-            } else if (algorithm === 'priority') {
-                simulatePriority();
+            const sortFunctions = {
+                sjf: (a, b) => a.burstTime - b.burstTime,
+                ljf: (a, b) => b.burstTime - a.burstTime,
+                priority_np: (a, b) => a.priority - b.priority,
+                srtf: (a, b) => a.remainingTime - b.remainingTime,
+                lrtf: (a, b) => b.remainingTime - a.remainingTime,
+                priority_p: (a, b) => a.priority - b.priority,
+            };
+
+            switch(algorithm) {
+                case 'fcfs':
+                    simulateNonPreemptive((a, b) => a.arrivalTime - b.arrivalTime);
+                    break;
+                case 'sjf':
+                case 'ljf':
+                case 'priority_np':
+                    simulateNonPreemptive(sortFunctions[algorithm]);
+                    break;
+                case 'srtf':
+                case 'lrtf':
+                case 'priority_p':
+                    simulatePreemptive(sortFunctions[algorithm]);
+                    break;
+                case 'rr':
+                    simulateRoundRobin(quantum);
+                    break;
             }
 
             showControls();
             showStep(0);
         }
 
-        function simulateRoundRobin(quantum) {
-            let time = 0;
-            let readyQueue = [];
-            let completedCount = 0;
-            let processCopy = JSON.parse(JSON.stringify(processes));
-            let processQueue = [...processCopy];
-
-            while (completedCount < processes.length) {
-                processQueue = processQueue.filter(p => {
-                    if (p.arrivalTime <= time) {
-                        readyQueue.push(p);
-                        return false; 
-                    }
-                    return true;
-                });
-
-                if (readyQueue.length === 0) {
-                    if (processQueue.length > 0) {
-                        const nextArrivalTime = processQueue[0].arrivalTime;
-                        if (time < nextArrivalTime) {
-                            simulationSteps.push({ idle: true, time: time, endTime: nextArrivalTime });
-                            time = nextArrivalTime;
-                            continue;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-
-                let currentProcess = readyQueue.shift();
-                let executeTime = Math.min(quantum, currentProcess.remainingTime);
-
-                simulationSteps.push({
-                    time: time,
-                    endTime: time + executeTime,
-                    process: currentProcess.id,
-                    readyQueue: readyQueue.map(p => ({id: p.id, color: processes.find(orig => orig.id === p.id).color}))
-                });
-
-                time += executeTime;
-                currentProcess.remainingTime -= executeTime;
-
-                 processQueue = processQueue.filter(p => {
-                    if (p.arrivalTime <= time) {
-                        readyQueue.push(p);
-                        return false;
-                    }
-                    return true;
-                });
-
-                if (currentProcess.remainingTime > 0) {
-                    readyQueue.push(currentProcess);
-                } else {
-                    completedCount++;
-                }
-            }
-        }
-        
-        function simulateFirstComeFirstServed() {
-            let time = 0;
-            let processCopy = JSON.parse(JSON.stringify(processes));
-
-            processCopy.forEach(process => {
-                if (time < process.arrivalTime) {
-                    simulationSteps.push({ idle: true, time: time, endTime: process.arrivalTime });
-                    time = process.arrivalTime;
-                }
-                
-                let readyQueue = processCopy.filter(p => 
-                    p.arrivalTime <= time && p.id !== process.id && p.burstTime > 0
-                );
-
-                simulationSteps.push({
-                    time: time,
-                    endTime: time + process.burstTime,
-                    process: process.id,
-                    readyQueue: readyQueue.map(p => ({id: p.id, color: processes.find(orig => orig.id === p.id).color}))
-                });
-
-                time += process.burstTime;
-                process.burstTime = 0; 
-            });
-        }
-        
         function simulateNonPreemptive(sortCriteria) {
             let time = 0;
             let completedCount = 0;
@@ -634,9 +568,7 @@
                             time = nextProcess.arrivalTime;
                         }
                         continue;
-                    } else {
-                        break; 
-                    }
+                    } else break;
                 }
 
                 available.sort(sortCriteria);
@@ -656,13 +588,107 @@
                 completedCount++;
             }
         }
+        
+        function simulatePreemptive(sortCriteria) {
+            let time = 0;
+            let completedCount = 0;
+            let processCopy = JSON.parse(JSON.stringify(processes));
+            let readyQueue = [];
+            let currentProcess = null;
 
-        function simulateShortestJobFirst() {
-            simulateNonPreemptive((a, b) => a.burstTime - b.burstTime);
+            while(completedCount < processes.length) {
+                processCopy.forEach(p => {
+                    if(p.arrivalTime === time) {
+                        readyQueue.push(p);
+                    }
+                });
+
+                if (currentProcess) {
+                    readyQueue.sort(sortCriteria);
+                    if(readyQueue.length > 0 && sortCriteria(readyQueue[0], currentProcess) < 0) {
+                        // Preempt
+                        readyQueue.push(currentProcess);
+                        currentProcess = null;
+                    }
+                }
+
+                if (!currentProcess && readyQueue.length > 0) {
+                    readyQueue.sort(sortCriteria);
+                    currentProcess = readyQueue.shift();
+                }
+
+                const stepStartTime = time;
+                let stepEndTime = time + 1;
+
+                if (currentProcess) {
+                    simulationSteps.push({
+                        time: stepStartTime,
+                        endTime: stepEndTime,
+                        process: currentProcess.id,
+                        readyQueue: readyQueue.map(p => ({id: p.id, color: processes.find(orig => orig.id === p.id).color}))
+                    });
+                    currentProcess.remainingTime--;
+                    if(currentProcess.remainingTime === 0) {
+                        completedCount++;
+                        currentProcess = null;
+                    }
+                } else {
+                     simulationSteps.push({ idle: true, time: stepStartTime, endTime: stepEndTime });
+                }
+
+                time++;
+            }
         }
 
-        function simulatePriority() {
-            simulateNonPreemptive((a, b) => a.priority - b.priority);
+        function simulateRoundRobin(quantum) {
+            let time = 0;
+            let readyQueue = [];
+            let completedCount = 0;
+            let processCopy = JSON.parse(JSON.stringify(processes));
+            let processQueue = [...processCopy];
+
+            while (completedCount < processes.length) {
+                processQueue = processQueue.filter(p => {
+                    if (p.arrivalTime <= time && !readyQueue.find(rp => rp.id === p.id)) {
+                        readyQueue.push(p);
+                        return false; 
+                    }
+                    return true;
+                });
+
+                if (readyQueue.length === 0) {
+                    if (processQueue.length > 0) {
+                        const nextArrivalTime = processQueue[0].arrivalTime;
+                        if (time < nextArrivalTime) {
+                            simulationSteps.push({ idle: true, time: time, endTime: nextArrivalTime });
+                            time = nextArrivalTime;
+                            continue;
+                        }
+                    } else break;
+                }
+
+                let currentProcess = readyQueue.shift();
+                let executeTime = Math.min(quantum, currentProcess.remainingTime);
+                
+                simulationSteps.push({ time: time, endTime: time + executeTime, process: currentProcess.id, readyQueue: readyQueue.map(p => ({id: p.id, color: processes.find(orig => orig.id === p.id).color})) });
+                
+                time += executeTime;
+                currentProcess.remainingTime -= executeTime;
+
+                processQueue = processQueue.filter(p => {
+                    if (p.arrivalTime <= time && !readyQueue.find(rp => rp.id === p.id)) {
+                        readyQueue.push(p);
+                        return false;
+                    }
+                    return true;
+                });
+
+                if (currentProcess.remainingTime > 0) {
+                    readyQueue.push(currentProcess);
+                } else {
+                    completedCount++;
+                }
+            }
         }
 
         function showStep(step) {
@@ -685,26 +711,43 @@
             document.getElementById('stepInfo').innerHTML = 
                 `<strong>Step ${stepIndex + 1}/${simulationSteps.length}</strong><br>${actionText}`;
         }
+        
+        function mergeGanttSteps(steps) {
+            if (!steps || steps.length === 0) return [];
+            const merged = [];
+            let current = {...steps[0]};
+
+            for (let i = 1; i < steps.length; i++) {
+                if (steps[i].process === current.process && steps[i].time === current.endTime) {
+                    current.endTime = steps[i].endTime;
+                } else if (steps[i].idle && current.idle && steps[i].time === current.endTime) {
+                    current.endTime = steps[i].endTime;
+                }
+                else {
+                    merged.push(current);
+                    current = {...steps[i]};
+                }
+            }
+            merged.push(current);
+            return merged;
+        }
 
         function updateGanttChart(upToStep) {
             const ganttChart = document.getElementById('ganttChart');
             const timeLabels = document.getElementById('timeLabels');
             ganttChart.innerHTML = '';
             timeLabels.innerHTML = '';
+            
+            const ganttSteps = mergeGanttSteps(simulationSteps.slice(0, upToStep + 1));
 
-            let totalWidth = 0;
             let maxTime = 0;
-
-            for (let i = 0; i <= upToStep; i++) {
-                const step = simulationSteps[i];
+            ganttSteps.forEach(step => {
                 const duration = step.endTime - step.time;
-                if (duration <= 0) continue;
+                if (duration <= 0) return;
 
                 const slot = document.createElement('div');
                 slot.className = 'time-slot';
-                
-                const slotWidth = duration * TIME_UNIT_WIDTH;
-                slot.style.width = `${slotWidth}px`;
+                slot.style.width = `${duration * TIME_UNIT_WIDTH}px`;
 
                 const processIdDiv = document.createElement('div');
                 processIdDiv.className = 'process-id';
@@ -727,10 +770,10 @@
                 slot.appendChild(processIdDiv);
                 slot.appendChild(timeRangeDiv);
                 ganttChart.appendChild(slot);
-                maxTime = step.endTime;
-            }
+                if (step.endTime > maxTime) maxTime = step.endTime;
+            });
 
-            totalWidth = maxTime * TIME_UNIT_WIDTH;
+            const totalWidth = maxTime * TIME_UNIT_WIDTH;
             ganttChart.style.width = `${totalWidth}px`;
             timeLabels.style.width = `${totalWidth}px`;
 
@@ -747,10 +790,11 @@
             const container = document.getElementById('readyQueueStates');
             container.innerHTML = '';
 
-            for (let i = 0; i <= upToStep; i++) {
-                const step = simulationSteps[i];
-                if (step.idle) continue; 
-                
+            const relevantSteps = simulationSteps.slice(0, upToStep + 1).filter((step, index, arr) => 
+                !step.idle && (index === 0 || JSON.stringify(step.readyQueue) !== JSON.stringify(arr[index-1].readyQueue) || step.time !== arr[index-1].time)
+            );
+
+            relevantSteps.forEach(step => {
                 const queueState = document.createElement('div');
                 queueState.className = 'queue-state';
                 
@@ -780,7 +824,7 @@
                 queueState.appendChild(timeDiv);
                 queueState.appendChild(processesDiv);
                 container.appendChild(queueState);
-            }
+            });
         }
 
         function updateProcessColors() {
@@ -843,13 +887,12 @@
                 
                 if (currentStep < simulationSteps.length - 1) {
                     nextStep();
-                    setTimeout(playNext, 1500);
+                    setTimeout(playNext, 100); // Faster for preemptive
                 } else {
                     isAutoPlaying = false;
                     document.getElementById('autoBtn').textContent = 'Auto Play';
                 }
             };
-            
             playNext();
         }
 
@@ -859,10 +902,9 @@
         });
 
         window.onload = function() {
-            // Clear default sample data to avoid confusion with priority
             processes = [];
             updateProcessList();
-            document.getElementById('quantumDiv').style.display = 'none'; // Hide RR quantum by default
+            document.getElementById('quantumDiv').style.display = 'none';
             document.getElementById('algorithm').value = 'fcfs';
         };
     </script>
