@@ -180,20 +180,82 @@
             border-radius: 8px;
             padding: 20px;
             margin-bottom: 20px;
-            min-height: 100px;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .gantt-chart h3 {
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+
+        .gantt-content {
+            min-width: max-content;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .gantt-timeline {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 10px;
+            position: relative;
         }
 
         .time-slot {
-            display: inline-block;
-            min-width: 50px;
-            height: 40px;
-            margin: 2px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-width: 60px;
+            height: 50px;
+            margin: 1px;
             text-align: center;
-            line-height: 40px;
             border-radius: 5px;
             color: white;
             font-weight: bold;
             position: relative;
+            font-size: 14px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+
+        .time-slot .process-id {
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .time-slot .time-range {
+            font-size: 10px;
+            opacity: 0.9;
+            margin-top: 2px;
+        }
+
+        .time-labels {
+            display: flex;
+            margin-top: 10px;
+            border-top: 2px solid #ecf0f1;
+            padding-top: 10px;
+        }
+
+        .time-label {
+            min-width: 62px;
+            text-align: center;
+            font-weight: bold;
+            color: #2c3e50;
+            font-size: 14px;
+            position: relative;
+        }
+
+        .time-label::before {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 2px;
+            height: 8px;
+            background: #2c3e50;
         }
 
         .ready-queue-container {
@@ -275,6 +337,14 @@
             color: #856404;
         }
 
+        .scroll-hint {
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 12px;
+            margin-top: 5px;
+            font-style: italic;
+        }
+
         @media (max-width: 1024px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -342,8 +412,11 @@
                 
                 <div class="gantt-chart">
                     <h3>Gantt Chart:</h3>
-                    <div id="ganttChart"></div>
-                    <div id="timeLabels"></div>
+                    <div class="gantt-content">
+                        <div class="gantt-timeline" id="ganttChart"></div>
+                        <div class="time-labels" id="timeLabels"></div>
+                    </div>
+                    <div class="scroll-hint">Scroll horizontally to see full timeline</div>
                 </div>
                 
                 <div class="process-colors" id="processColors"></div>
@@ -605,9 +678,19 @@
                 const slot = document.createElement('div');
                 slot.className = 'time-slot';
                 slot.style.backgroundColor = process.color;
-                slot.style.width = `${(step.endTime - step.time) * 50}px`;
-                slot.textContent = step.process;
-                slot.title = `${step.process}: ${step.time}-${step.endTime}`;
+                slot.style.width = `${(step.endTime - step.time) * 60}px`;
+                
+                const processId = document.createElement('div');
+                processId.className = 'process-id';
+                processId.textContent = step.process;
+                
+                const timeRange = document.createElement('div');
+                timeRange.className = 'time-range';
+                timeRange.textContent = `${step.time}-${step.endTime}`;
+                
+                slot.appendChild(processId);
+                slot.appendChild(timeRange);
+                slot.title = `${step.process}: Time ${step.time} to ${step.endTime} (Duration: ${step.endTime - step.time})`;
                 
                 ganttChart.appendChild(slot);
             }
@@ -620,11 +703,8 @@
 
             for (let t = 0; t <= maxTime; t++) {
                 const label = document.createElement('div');
-                label.style.display = 'inline-block';
-                label.style.width = '50px';
-                label.style.textAlign = 'center';
-                label.style.fontSize = '12px';
-                label.style.marginTop = '5px';
+                label.className = 'time-label';
+                label.style.width = '60px';
                 label.textContent = t;
                 timeLabels.appendChild(label);
             }
